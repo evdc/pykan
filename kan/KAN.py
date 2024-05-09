@@ -133,6 +133,7 @@ class KAN(nn.Module):
         self.act_fun = []
         self.depth = len(width) - 1
         self.width = width
+        self.device = device
 
         for l in range(self.depth):
             # splines
@@ -321,13 +322,13 @@ class KAN(nn.Module):
             grid_reshape = self.act_fun[l].grid.reshape(self.width[l + 1], self.width[l], -1)
             input_range = grid_reshape[:, :, -1] - grid_reshape[:, :, 0] + 1e-4
             output_range = torch.mean(torch.abs(postacts), dim=0)
-            self.acts_scale.append(output_range / input_range)
+            self.acts_scale.append(output_range / input_range.to(self.device))
             self.acts_scale_std.append(torch.std(postacts, dim=0))
             self.spline_preacts.append(preacts.detach())
             self.spline_postacts.append(postacts.detach())
             self.spline_postsplines.append(postspline.detach())
 
-            x = x + self.biases[l].weight
+            x = x + self.biases[l].weight.to(self.device)
             self.acts.append(x)
 
         return x

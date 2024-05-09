@@ -112,27 +112,27 @@ class KANLayer(nn.Module):
         self.in_dim = in_dim
         self.num = num
         self.k = k
+        self.device = device
 
         # shape: (size, num)
-        self.grid = torch.einsum('i,j->ij', torch.ones(size, ), torch.linspace(grid_range[0], grid_range[1], steps=num + 1))
+        self.grid = torch.einsum('i,j->ij', torch.ones(size, device=self.device), torch.linspace(grid_range[0], grid_range[1], steps=num + 1, device=self.device))
         self.grid = torch.nn.Parameter(self.grid).requires_grad_(False)
         noises = (torch.rand(size, self.grid.shape[1]) - 1 / 2) * noise_scale / num
         noises = noises.to(device)
         # shape: (size, coef)
-        self.coef = torch.nn.Parameter(curve2coef(self.grid, noises, self.grid, k))
+        self.coef = torch.nn.Parameter(curve2coef(self.grid, noises, self.grid, k, device=self.device))
         if isinstance(scale_base, float):
-            self.scale_base = torch.nn.Parameter(torch.ones(size, ) * scale_base).requires_grad_(sb_trainable)  # make scale trainable
+            self.scale_base = torch.nn.Parameter(torch.ones(size, device=self.device) * scale_base).requires_grad_(sb_trainable)  # make scale trainable
         else:
-            self.scale_base = torch.nn.Parameter(scale_base).requires_grad_(sb_trainable)
-        self.scale_sp = torch.nn.Parameter(torch.ones(size, ) * scale_sp).requires_grad_(sp_trainable)  # make scale trainable
+            self.scale_base = torch.nn.Parameter(scale_base.to(self.device)).requires_grad_(sb_trainable)
+        self.scale_sp = torch.nn.Parameter(torch.ones(size, device=self.device) * scale_sp).requires_grad_(sp_trainable)  # make scale trainable
         self.base_fun = base_fun
 
-        self.mask = torch.nn.Parameter(torch.ones(size, )).requires_grad_(False)
+        self.mask = torch.nn.Parameter(torch.ones(size, device=self.device)).requires_grad_(False)
         self.grid_eps = grid_eps
         self.weight_sharing = torch.arange(size)
         self.lock_counter = 0
         self.lock_id = torch.zeros(size)
-        self.device = device
 
     def forward(self, x):
         '''
@@ -167,7 +167,7 @@ class KANLayer(nn.Module):
         '''
         batch = x.shape[0]
         # x: shape (batch, in_dim) => shape (size, batch) (size = out_dim * in_dim)
-        x = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, ).to(self.device)).reshape(batch, self.size).permute(1, 0)
+        x = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, device=self.device)).reshape(batch, self.size).permute(1, 0)
         preacts = x.permute(1, 0).clone().reshape(batch, self.out_dim, self.in_dim)
         base = self.base_fun(x).permute(1, 0)  # shape (batch, size)
         y = coef2curve(x_eval=x, grid=self.grid[self.weight_sharing], coef=self.coef[self.weight_sharing], k=self.k, device=self.device)  # shape (size, batch)
@@ -206,7 +206,7 @@ class KANLayer(nn.Module):
         tensor([[-3.0002, -1.7882, -0.5763,  0.6357,  1.8476,  3.0002]])
         '''
         batch = x.shape[0]
-        x = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, ).to(self.device)).reshape(batch, self.size).permute(1, 0)
+        x = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, device=self.device)).reshape(batch, self.size).permute(1, 0)
         x_pos = torch.sort(x, dim=1)[0]
         y_eval = coef2curve(x_pos, self.grid, self.coef, self.k, device=self.device)
         num_interval = self.grid.shape[1] - 1
@@ -247,12 +247,12 @@ class KANLayer(nn.Module):
         '''
         batch = x.shape[0]
         # preacts: shape (batch, in_dim) => shape (size, batch) (size = out_dim * in_dim)
-        x_eval = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, ).to(self.device)).reshape(batch, self.size).permute(1, 0)
+        x_eval = torch.einsum('ij,k->ikj', x, torch.ones(self.out_dim, device=self.device)).reshape(batch, self.size).permute(1, 0)
         x_pos = parent.grid
-        sp2 = KANLayer(in_dim=1, out_dim=self.size, k=1, num=x_pos.shape[1] - 1, scale_base=0.).to(self.device)
+        sp2 = KANLayer(in_dim=1, out_dim=self.size, k=1, num=x_pos.shape[1] - 1, scale_base=0., device=self.device)
         sp2.coef.data = curve2coef(sp2.grid, x_pos, sp2.grid, k=1)
         y_eval = coef2curve(x_eval, parent.grid, parent.coef, parent.k, device=self.device)
-        percentile = torch.linspace(-1, 1, self.num + 1).to(self.device)
+        percentile = torch.linspace(-1, 1, self.num + 1, device=self.device)
         self.grid.data = sp2(percentile.unsqueeze(dim=1))[0].permute(1, 0)
         self.coef.data = curve2coef(x_eval, y_eval, self.grid, self.k, self.device)
 
